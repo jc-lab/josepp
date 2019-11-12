@@ -27,10 +27,11 @@ namespace jose {
 
 static const std::string bearer_hdr("bearer ");
 
-jws::jws(jose::alg alg, const std::string &data, sp_claims cl, const std::string &sig)
+jws::jws(jose::alg alg, const std::string &data, sp_hdr hdr, sp_claims cl, const std::string &sig)
 	: _alg(alg)
 	, _data(data)
-	, _claims(cl)
+    , _hdr(hdr)
+    , _claims(cl)
 	, _sig(sig) {
 
 }
@@ -55,22 +56,28 @@ bool jws::verify(sp_crypto c, verify_cb v) {
 	return true;
 }
 
-sp_jws jws::parse(const std::string &full_bearer) {
-	if (full_bearer.empty() || full_bearer.length() < bearer_hdr.length()) {
-		throw std::invalid_argument("Bearer is invalid or empty");
-	}
+sp_jws jws::parse(const std::string &full_bearer, bool is_bearer) {
+    std::string raw;
 
-	for (size_t i = 0; i < bearer_hdr.length(); i++) {
+    if(is_bearer) {
+        bool has_bearer = true;
+        for (size_t i = 0; i < bearer_hdr.length(); i++) {
+            if (bearer_hdr[i] != tolower(full_bearer[i])) {
+                has_bearer = false;
+            }
+        }
 
-		if (bearer_hdr[i] != tolower(full_bearer[i])) {
-			throw std::invalid_argument("Bearer header is invalid");
-		}
-	}
+        if (is_bearer && !has_bearer) {
+            throw std::invalid_argument("Bearer header is invalid");
+        }
 
-	std::string bearer = full_bearer.substr(bearer_hdr.length());
+        raw = full_bearer.substr(bearer_hdr.length());
+    }else{
+        raw = full_bearer;
+    }
 
 	std::vector<std::string> tokens;
-	tokens = tokenize(bearer, '.');
+	tokens = tokenize(raw, '.');
 
 	if (tokens.size() != 3) {
 		throw std::runtime_error("Bearer is invalid");
@@ -88,19 +95,17 @@ sp_jws jws::parse(const std::string &full_bearer) {
 		throw std::runtime_error("Invalid JWT header");
 	}
 
-	if (hdr["typ"].asString() != "JWT") {
-		throw std::runtime_error("Is not JWT");
-	}
-
 	jose::alg alg = crypto::str2alg(hdr["alg"].asString());
 	if (alg >= jose::alg::UNKNOWN) {
 		throw std::runtime_error("Invalid alg");
 	}
 
-	sp_claims cl;
+    sp_hdr h;
+    sp_claims cl;
 
 	try {
-		cl = std::make_shared<class claims>(tokens[1], true);
+        h = std::make_shared<class hdr>(tokens[0], true);
+        cl = std::make_shared<class claims>(tokens[1], true);
 	} catch (...) {
 		throw;
 	}
@@ -112,7 +117,7 @@ sp_jws jws::parse(const std::string &full_bearer) {
 	jws *j;
 
 	try {
-		j = new jws(alg, d, cl, tokens[2]);
+		j = new jws(alg, d, h, cl, tokens[2]);
 	} catch (...) {
 		throw;
 	}
@@ -124,10 +129,10 @@ std::string jws::sign(const std::string &data, sp_crypto c) {
 	return c->sign(data);
 }
 
-std::string jws::sign_claims(class claims &cl, sp_crypto c) {
+std::string jws::sign_claims(class hdr& h, class claims &cl, sp_crypto c) {
 	std::string out;
 
-	hdr h(c->alg());
+	h.set().alg(crypto::alg2str(c->alg()));
 	out = h.b64();
 	out += ".";
 	out += cl.b64();
@@ -140,10 +145,19 @@ std::string jws::sign_claims(class claims &cl, sp_crypto c) {
 	return out;
 }
 
-std::string jws::sign_bearer(class claims &cl, sp_crypto c) {
+std::string jws::sign_bearer(class hdr& h, class claims &cl, sp_crypto c) {
 	std::string bearer("Bearer ");
-	bearer += jws::sign_claims(cl, c);
+	bearer += jws::sign_claims(h, cl, c);
 	return bearer;
+}
+
+std::string jws::sign_claims(class claims &cl, sp_crypto c) {
+    class hdr h;
+    return sign_claims(h, cl, c);
+}
+std::string jws::sign_bearer(class claims &cl, sp_crypto c) {
+    class hdr h;
+    return sign_bearer(h, cl, c);
 }
 
 std::vector<std::string> jws::tokenize(const std::string &text, char sep) {

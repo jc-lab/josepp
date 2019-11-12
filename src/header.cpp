@@ -21,42 +21,68 @@
 // SOFTWARE.
 
 #include <josepp/header.hpp>
+#include <josepp/b64.hpp>
 #include <josepp/tools.hpp>
 #include <josepp/crypto.hpp>
 
 namespace jose {
 
-hdr::hdr(jose::alg alg)
-	: _h()
+void hdr::set::any(const std::string &key, const std::string &value)
 {
-	_h["typ"] = "JWT";
-	_h["alg"]  = crypto::alg2str(alg);
+    if (key.empty() || value.empty())
+        throw std::invalid_argument("Invalid params");
+
+    _claims->operator[](key) = value;
 }
 
-hdr::hdr(const std::string &data)
-	: _h()
-{
-	std::stringstream(data) >> _h;
+void hdr::set::arr(const std::string &key, const std::list<std::string> &value) {
+    Json::Value jarr;
 
-	if (!_h.isMember("typ") || !_h["typ"].isString()) {
+    if (key.empty())
+        throw std::invalid_argument("Invalid params");
+
+    for(auto it = value.cbegin(); it != value.cend(); it++) {
+        jarr.append(*it);
+    }
+
+    _claims->operator[](key) = jarr;
+}
+
+hdr::hdr()
+    : _claims()
+    , _set(&_claims)
+    , _get(&_claims)
+    , _has(&_claims)
+    , _del(&_claims)
+    , _check(&_claims)
+{}
+
+hdr::hdr(const std::string &d, bool b64)
+	: hdr()
+{
+    if (b64) {
+        std::string decoded = b64::decode_uri(d);
+
+        std::stringstream(decoded) >> _claims;
+    } else {
+        std::stringstream(d) >> _claims;
+    }
+
+	if (!_claims.isMember("typ") || !_claims["typ"].isString()) {
 		throw std::runtime_error("stream does not have valid \"typ\" field");
 	}
 
-	if (_h["typ"].asString() != "JWT") {
-		throw std::runtime_error("invalid \"typ\" value");
-	}
-
-	if (!_h.isMember("alg") || !_h["alg"].isString()) {
+	if (!_claims.isMember("alg") || !_claims["alg"].isString()) {
 		throw std::runtime_error("stream does not have valid \"alg\" field");
 	}
 
-	if (jose::crypto::str2alg(_h["alg"].asString()) == jose::alg::UNKNOWN) {
+	if (jose::crypto::str2alg(_claims["alg"].asString()) == jose::alg::UNKNOWN) {
 		throw std::runtime_error("invalid \"alg\" value");
 	}
 }
 
 std::string hdr::b64() {
-	return marshal_b64(_h);
+	return marshal_b64(_claims);
 }
 
 } // namespace jose

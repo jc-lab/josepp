@@ -59,7 +59,7 @@ private:
 	 * \param cl
 	 * \param sig
 	 */
-	jws(jose::alg alg, const std::string &data, sp_claims cl, const std::string &sig);
+	jws(jose::alg alg, const std::string &data, sp_hdr hdr, sp_claims cl, const std::string &sig);
 
 public:
 	/**
@@ -83,9 +83,18 @@ public:
 	 *
 	 * \return
 	 */
-	class claims &claims() {
-		return *(_claims.get());
+	class hdr &hdr() {
+		return *(_hdr.get());
 	}
+
+	/**
+	 * \brief
+	 *
+	 * \return
+	 */
+    class claims &claims() {
+        return *(_claims.get());
+    }
 
 public:
 	/**
@@ -95,7 +104,7 @@ public:
 	 *
 	 * \return
 	 */
-	static sp_jws parse(const std::string &b);
+	static sp_jws parse(const std::string &b, bool is_bearer = true);
 
 	/**
 	 * \brief Sign content and return signature
@@ -107,9 +116,13 @@ public:
 	 */
 	static std::string sign(const std::string &data, sp_crypto c);
 
-	static std::string sign_claims(class claims &cl, sp_crypto c);
+	static std::string sign_claims(class hdr& h, class claims &cl, sp_crypto c);
 
-	static std::string sign_bearer(class claims &cl, sp_crypto c);
+	static std::string sign_bearer(class hdr& h, class claims &cl, sp_crypto c);
+
+    static std::string sign_claims(class claims &cl, sp_crypto c);
+
+    static std::string sign_bearer(class claims &cl, sp_crypto c);
 private:
 	/**
 	 * \brief
@@ -123,6 +136,7 @@ private:
 private:
 	jose::alg    _alg;
 	std::string  _data;
+	sp_hdr       _hdr;
 	sp_claims    _claims;
 	std::string  _sig;
 };

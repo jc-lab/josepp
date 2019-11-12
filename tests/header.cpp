@@ -31,14 +31,9 @@
 TEST(JosePP, header_decode_valid) {
 	EXPECT_NO_THROW(jose::hdr("{\"typ\":\"JWT\",\"alg\":\"RS256\"}"));
 
-	EXPECT_THROW(jose::hdr("{\"typ\":\"Jwt\",\"alg\":\"RS256\"}"), std::exception);
 	EXPECT_THROW(jose::hdr("{,\"alg\":\"RS256\"}"), std::exception);
 	EXPECT_THROW(jose::hdr("{\"alg\":\"RS256\"}"), std::exception);
 	EXPECT_THROW(jose::hdr("{\"alg\":\"BB6\"}"), std::exception);
-}
-
-TEST(JosePP, header_decode_invalid_typ) {
-	EXPECT_THROW(jose::hdr("{\"typ\":\"Jwt\",\"alg\":\"RS256\"}"), std::exception);
 }
 
 TEST(JosePP, header_invalid_json) {
