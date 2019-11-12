@@ -103,6 +103,9 @@ private:
 		std::string any(const std::string &key) {
 			return _claims->operator[](key).asString();
 		}
+		const Json::Value *json(const std::string &key) {
+			return &_claims->operator[](key);
+		}
 		std::string iss() { return any("iss"); }
 		std::string sub() { return any("sub"); }
 		std::string aud() { return any("aud"); }
