@@ -6,7 +6,16 @@ set(VERSION 0.1.0)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake/modules")
 
-include(CodeCoverage)
+if(NOT JOSEPP_WITHOUT_CODE_COVERAGE)
+	option(WITH_CODE_COVERAGE "Code coverage" ON)
+else()
+	set(WITH_CODE_COVERAGE OFF)
+endif()
+
+if(WITH_CODE_COVERAGE)
+	include(CodeCoverage)
+endif()
+
 include(CheckCSourceCompiles)
 include(CheckCCompilerFlag)
 include(CheckCXXSourceCompiles)
