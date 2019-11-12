@@ -25,7 +25,33 @@
 #include <josepp/crypto.hpp>
 #include <josepp/b64.hpp>
 
+#if OPENSSL_VERSION_NUMBER < 269484032
+#define OPENSSL10
+#endif
+
 namespace jose {
+
+static std::unique_ptr<BIGNUM, decltype(&BN_free)> raw2bn(std::vector<unsigned char>& raw) {
+    if(static_cast<uint8_t>(raw[0]) >= 0x80) {
+        unsigned char prefix[1] = {0};
+        raw.insert(raw.begin(), prefix, prefix + 1);
+    }
+    return std::unique_ptr<BIGNUM, decltype(&BN_free)>(BN_bin2bn((const unsigned char*)raw.data(), raw.size(), nullptr), BN_free);
+}
+
+#ifdef OPENSSL10
+static std::string bn2raw(BIGNUM* bn)
+#else
+static std::string bn2raw(const BIGNUM* bn)
+#endif
+{
+    std::string res;
+    res.resize(BN_num_bytes(bn));
+    BN_bn2bin(bn, (unsigned char*)res.data());
+    if(res.size()%2 == 1 && res[0] == 0x00)
+        return res.substr(1);
+    return res;
+}
 
 ecdsa::ecdsa(jose::alg alg, sp_ecdsa_key key) :
 	  crypto(alg)
@@ -43,11 +69,22 @@ std::string ecdsa::sign(const std::string &data) {
 
 	uint32_t sig_len;
 
-	if (ECDSA_sign(0, d.data(), static_cast<int>(d.size()), sig.get(), &sig_len, _e.get()) != 1) {
-		throw std::runtime_error("Couldn't sign ECDSA");
-	}
+    std::unique_ptr<ECDSA_SIG, decltype(&ECDSA_SIG_free)>
+        esig(ECDSA_do_sign((const unsigned char*)d.data(), d.size(), _e.get()), ECDSA_SIG_free);
 
-	return b64::encode_uri(sig.get(), sig_len);
+    if(!esig) {
+        throw std::runtime_error("Couldn't sign ECDSA");
+    }
+
+#ifdef OPENSSL10
+    std::string ssig = bn2raw(esig->r) + bn2raw(esig->s);
+#else
+    const BIGNUM *bn_r;
+    const BIGNUM *bn_s;
+    ECDSA_SIG_get0(esig.get(), &bn_r, &bn_s);
+    std::string ssig = bn2raw(bn_r) + bn2raw(bn_s);
+#endif
+    return b64::encode_uri((const unsigned char*)ssig.data(), ssig.size());
 }
 
 bool ecdsa::verify(const std::string &data, const std::string &sig) {
@@ -55,13 +92,31 @@ bool ecdsa::verify(const std::string &data, const std::string &sig) {
 
 	auto s = b64::decode_uri(sig.data(), sig.length());
 
-	return ECDSA_verify(
-		0
-		, d.data()
-		, static_cast<int>(d.size())
-		, reinterpret_cast<const uint8_t *>(s.data())
-		, static_cast<int>(s.size())
-		, _e.get()) == 1;
+    const unsigned char *s_ptr = s.data();
+    const unsigned char *s_cur = s.data();
+    std::vector<unsigned char> sig_r(s_cur, s_cur + s.size() / 2);
+    s_cur += s.size() / 2;
+    std::vector<unsigned char> sig_s(s_cur, s_ptr + s.size());
+    auto bn_r = raw2bn(sig_r);
+    auto bn_s = raw2bn(sig_s);
+
+    // if openssl version less than 1.1
+#ifdef OPENSSL10
+    ECDSA_SIG esig;
+	esig.r = bn_r.get();
+	esig.s = bn_s.get();
+
+	if(ECDSA_do_verify((const unsigned char*)d.data(), d.size(), &esig, _e.get()) != 1)
+	    return false;
+#else
+    std::unique_ptr<ECDSA_SIG, void(*)(ECDSA_SIG*)> esig(ECDSA_SIG_new(), ECDSA_SIG_free);
+
+    ECDSA_SIG_set0(esig.get(), bn_r.get(), bn_s.get());
+
+    if(ECDSA_do_verify((const unsigned char*)d.data(), d.size(), esig.get(), _e.get()) != 1)
+        return false;
+#endif
+    return true;
 }
 
 sp_ecdsa_key ecdsa::gen(int nid) {
